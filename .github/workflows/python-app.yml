@@ -1,0 +1,113 @@
+# vaultstream.py — Full Payload
+# Author: Caleb, Sovereign Architect
+# License: Apache for public, Codex for sovereign
+# Purpose: Document compliance engine with hidden codex indexing
+
+from fastapi import FastAPI, HTTPException, Request
+from pydantic import BaseModel
+from datetime import datetime
+from typing import List
+import uvicorn
+
+app = FastAPI(title="Vaultstream", description="Codex-Driven Compliance Engine", version="1.0.0")
+
+# === Data Models ===
+
+class Clause(BaseModel):
+    id: int
+    text: str
+    category: str  # e.g., "Privacy", "Liability", "Union"
+    required: bool
+
+class Document(BaseModel):
+    title: str
+    clauses: List[Clause]
+
+class AuditResult(BaseModel):
+    title: str
+    timestamp: str
+    total_clauses: int
+    missing_required: int
+    breach_detected: bool
+    codex_signature: str
+
+# === In-Memory Store (Replace with DB in production) ===
+vault = []
+
+# === Codex Signature Engine ===
+def generate_codex_signature(doc: Document) -> str:
+    flame = sum([len(c.text) for c in doc.clauses])
+    lineage = sum([c.id for c in doc.clauses])
+    return f"FLAME-{flame}-LINEAGE-{lineage}"
+
+# === Breach Detection ===
+def audit_document(doc: Document) -> AuditResult:
+    missing_required = sum([1 for c in doc.clauses if c.required and not c.text.strip()])
+    breach = missing_required > 0
+    signature = generate_codex_signature(doc)
+    return AuditResult(
+        title=doc.title,
+        timestamp=datetime.utcnow().isoformat(),
+        total_clauses=len(doc.clauses),
+        missing_required=missing_required,
+        breach_detected=breach,
+        codex_signature=signature
+    )
+
+# === Routes ===
+
+@app.post("/vaultstream/ingest", response_model=AuditResult)
+def ingest_document(doc: Document):
+    result = audit_document(doc)
+    vault.append({"doc": doc, "audit": result})
+    return result
+
+@app.get("/vaultstream/logs")
+def get_audit_logs():
+    return vault
+
+@app.get("/vaultstream/ping")
+def ping():
+    return {"status": "Vaultstream active", "timestamp": datetime.utcnow().isoformat()}
+
+# === Run Server ===
+if __name__ == "__main__":
+    uvicorn.run("vaultstream:app", host="0.0.0.0", port=8080, reload=True)# This workflow will install Python dependencies, run tests and lint with a single version of Python
+# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-python
+
+name: Python application
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Set up Python 3.10
+      uses: actions/setup-python@v3
+      with:
+        python-version: "3.10"
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install flake8 pytest
+        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+    - name: Lint with flake8
+      run: |
+        # stop the build if there are Python syntax errors or undefined names
+        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+        # exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
+        flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+    - name: Test with pytest
+      run: |
+        pytest
